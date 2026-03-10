@@ -1,0 +1,131 @@
+// -------- Pin Definitions --------
+const int conductivityPin = A0;
+const int tempPin = A1;
+
+// -------- Constants --------
+const float VREF = 5.0;
+const int ADC_RES = 1023;
+const int SAMPLE_COUNT = 25;
+
+// Calibration constants
+float slope = 1100;
+float intercept = 0;
+
+// Stability detection
+float previousPPM = 0;
+float stabilityThreshold = 5;
+
+// -------- Read Averaged Voltage --------
+float readVoltage(int pin) {
+
+  long total = 0;
+
+  for(int i = 0; i < SAMPLE_COUNT; i++) {
+    total += analogRead(pin);
+    delay(4);
+  }
+
+  float avgADC = total / (float)SAMPLE_COUNT;
+  float voltage = avgADC * (VREF / ADC_RES);
+
+  return voltage;
+}
+
+// -------- Read Temperature --------
+float readTemperature() {
+
+  float voltage = readVoltage(tempPin);
+  float temperature = voltage * 100;   // LM35: 10mV per °C
+
+  return temperature;
+}
+
+// -------- Temperature Compensation --------
+float compensateConductivity(float voltage, float temp) {
+
+  float ec25 = voltage / (1 + 0.02 * (temp - 25));
+  return ec25;
+}
+
+// -------- Convert Voltage to Salinity --------
+float convertToPPM(float ec) {
+
+  float ppm = slope * ec + intercept;
+  return ppm;
+}
+
+// -------- Water Classification --------
+String classifyWater(float ppm) {
+
+  if(ppm < 500)
+    return "Fresh Water";
+
+  else if(ppm < 2000)
+    return "Irrigation Safe";
+
+  else if(ppm < 10000)
+    return "Brackish Water";
+
+  else
+    return "Saline Water";
+}
+
+// -------- Stability Check --------
+bool isStable(float currentPPM) {
+
+  float difference = abs(currentPPM - previousPPM);
+
+  if(difference < stabilityThreshold)
+    return true;
+  else
+    return false;
+}
+
+// -------- Setup --------
+void setup() {
+
+  Serial.begin(9600);
+
+  Serial.println("Water Salinity Measurement System");
+  Serial.println("----------------------------------");
+}
+
+// -------- Main Loop --------
+void loop() {
+
+  float voltage = readVoltage(conductivityPin);
+  float temperature = readTemperature();
+
+  float ec25 = compensateConductivity(voltage, temperature);
+
+  float ppm = convertToPPM(ec25);
+
+  String waterType = classifyWater(ppm);
+
+  bool stable = isStable(ppm);
+
+  Serial.print("Voltage: ");
+  Serial.print(voltage);
+  Serial.print(" V   ");
+
+  Serial.print("Temp: ");
+  Serial.print(temperature);
+  Serial.print(" C   ");
+
+  Serial.print("Salinity: ");
+  Serial.print(ppm);
+  Serial.print(" ppm   ");
+
+  Serial.print("Water Type: ");
+  Serial.print(waterType);
+  Serial.print("   ");
+
+  if(stable)
+    Serial.println("Reading Stable");
+  else
+    Serial.println("Reading Stabilizing");
+
+  previousPPM = ppm;
+
+  delay(1000);
+}
